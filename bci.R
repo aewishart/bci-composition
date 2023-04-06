@@ -6,7 +6,8 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-#This code
+#This is the code for the manuscript studying the relationship between body condition indices and body composition in three squirrel species. bioRxiv preprint DOI: 10.1101/2023.01.31.524791 Feb 2023
+
 #Load libraries
 ```{r}
 library(tidyverse)
@@ -16,540 +17,63 @@ library(lmerTest)
 library(MCMCglmm)
 library(ggplot2)
 library(visreg)
+library(plotrix)
+library(viridis)
+library(multcomp)
+library(AICcmodavg)
 
 select = dplyr::select #necessary as MASS also has a select function
 filter = dplyr::filter
+
+ctrl <- lmerControl(optCtrl=list(xtol_rel=1e-6)) # Warning otherwise
 ```
-
-
-#Get Data 
-
-#CGS
+#Define functions 
 ```{r}
-cgs <- read.csv("BCIdata_cgs.csv") #Read in data
-head(cgs)
+std <- function(x) sd(x)/sqrt(length(x))
 
-#Remove individuals for whom we only have
-cgs <- cgs %>%
-  filter(!is.na(rhf.avg), !is.na(zyg.avg), !is.na(fat), !is.na(lean), age.class %in% "Adult")%>%
-   mutate(sex = recode(sex, "M" = "male", "F" = "female")) %>%
-  mutate(leanp = (lean/wgt)*100, fatp = (fat/wgt)*100)
-
-#Split on season 
-
-cgsspr <- cgs %>% #Spring only 
-  filter(season %in% "spring") 
-nrow(cgsspr)
-
-cgsfall <- cgs %>% #Fall only 
-  filter(season %in% "fall") 
-nrow(cgsfall)
-
-
-cgsfall %>% count(sex)
-cgsspr %>% count(sex)
-
-#Summary stats
-cgsfall.summ.m <- cgsfall %>% #males
-          filter(sex == "male")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-           meanfat = mean(fat), 
-           sdfat = sd(fat), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean),
-           meanfatp = mean(fatp), 
-           sdfatp = sd(fatp), 
-            meanleanp = mean(leanp), 
-            sdleanp = sd(leanp))
-
-cgsfall.summ.f <- cgsfall %>% #females
-          filter(sex == "female")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-        meanfat = mean(fat), 
-           sdfat = sd(fat), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean),
-           meanfatp = mean(fatp), 
-           sdfatp = sd(fatp), 
-            meanleanp = mean(leanp), 
-            sdleanp = sd(leanp))
-
-
-cgsspr.summ.m <- cgsspr %>% #males
-          filter(sex == "male")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-           meanfat = mean(fat), 
-           sdfat = sd(fat), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean),
-           meanfatp = mean(fatp), 
-           sdfatp = sd(fatp), 
-            meanleanp = mean(leanp), 
-            sdleanp = sd(leanp))
-
-cgsspr.summ.f <- cgsspr %>% #females
-          filter(sex == "female")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-            meanfat = mean(fat), 
-           sdfat = sd(fat), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean),
-           meanfatp = mean(fatp), 
-           sdfatp = sd(fatp), 
-            meanleanp = mean(leanp), 
-            sdleanp = sd(leanp))
-
-
-cgsall <- rbind(cgsspr, cgsfall)
-```
-
-#Red Squirrel
-```{r}
-#Limit red squirrel data to FALL ONLY. Get means and SD
-rsq <- read.csv("BCIdata_rsq.csv") #Read in data
-
-
-rsq <- rsq %>% #Fall only 
-  filter(season %in% "fall") %>%
-    dplyr::select(-X)
-head(rsq)
-nrow(rsq)
-#71 rows
-
-
-#Remove individuals for whom we only have
-rsq <- rsq %>%
-  filter(!is.na(rhf.avg), !is.na(zyg.avg), !is.na(fat), !is.na(lean))%>%
-   mutate(sex = recode(sex, "M" = "male", "F" = "female")) %>%
-  mutate(leanp = (lean/wgt)*100, fatp = (fat/wgt)*100)
-
-nrow(rsq)
-n_distinct(rsq$squirrel.id)
-
-
-#Summary stats
-rsq %>% count(sex)
-
-rsq.summ.m <- rsq %>% #males
-          filter(sex == "male")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-           meanfat = mean(fatp), 
-           sdfat = sd(fatp), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean),
-           meanleanp = mean(leanp), 
-            sdleanp = sd(leanp))
-rsq.summ.m 
-
-rsq.summ.f <- rsq  %>% #females
-          filter(sex == "female")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-           meanfat = mean(fatp), 
-           sdfat = sd(fatp), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean),
-            meanleanp = mean(leanp), 
-            sdleanp = sd(leanp))
-rsq.summ.f
+CV <- function(x){
+        (sd(x)/mean(x))*100
+}
 
 ```
 
 
-
-#Black-Tailed Prairie Dog
+#Get data 
 ```{r}
-btpd <- read.csv("BCIdata_btpd.csv") #Read in data
+rsq <- read.csv("BCI-rsq.csv")
 
-#btpd <- btpd %>% #Fall only 
- # filter(season %in% "fall") %>%
-   # dplyr::select(-X)
-head(btpd)
-nrow(btpd)
-#38 rows
+btpd <- read.csv("BCI-btpd.csv")
+
+cgs <- read.csv("BCI-cgs.csv") #CGS data for both seasons
+
+cgsspr <- cgs %>%
+  filter(season == "spring")
 
 
-#Remove individuals for whom we only have
-btpd <- btpd %>%
-  filter(!is.na(rhf.avg), !is.na(zyg.avg), !is.na(fat), !is.na(lean))%>%
-   mutate(sex = recode(sex, "M" = "male", "F" = "female")) %>%
-  mutate(leanp = (lean/wgt)*100, fatp = (fat/wgt)*100)
-
-nrow(btpd)
-n_distinct(btpd$squirrel.id)
-
-#Summary stats
-btpd %>% count(sex)
-
-btpd.summ.m <- btpd %>% #males
-          filter(sex == "male")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-           meanfatp = mean(fatp), 
-           sdfatp = sd(fatp), 
-            meanleanp = mean(leanp), 
-            sdleanp = sd(leanp),
-           meanfat = mean(fat), 
-           sdfat = sd(fat), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean))
-btpd.summ.m
-
-btpd.summ.f <- btpd %>% #females
-          filter(sex == "female")%>%
-            summarize(meanwgt = mean(wgt),
-            wgtsd = sd(wgt),
-            meanrhf = mean(rhf.avg),
-            sdrhf = sd(rhf.avg), 
-           meanzyg = mean(zyg.avg), 
-           sdzyg = sd(zyg.avg), 
-           meanfat = mean(fatp), 
-           sdfat = sd(fatp), 
-            meanlean = mean(leanp), 
-            sdleanp = sd(leanp),
-           meanfat = mean(fat), 
-           sdfat = sd(fat), 
-            meanlean = mean(lean), 
-            sdlean = sd(lean), 
-            sdlean = sd(leanp))
-
-btpd.summ.f
+cgsfall <- cgs %>%
+  filter(season == "fall")
 
 ```
+#Select species to anlyze here by uncommenting data <- [species of interest]
 
-#Select data here
+#NOTE - this is to ensure each species is run with identical code. Figure and table text referencing species and/or season MUST be adjusted accordingly. e.g., if running RSQ code, must manually change figure titles to Red squirrel - otherwise they may read the wrong species/season. 
 ```{r}
-
 
 #Red squirrel
-#data <- rsq
+#data <- rsq  #uncomment if running code for this species 
 
 #Black-tailed prairie dog
-data <- btpd
+#data <- btpd  #comment out if running code for a different species 
 
 #CGS
 #data <- cgsfall
 
-#data <- cgsspr
-
-#data <- cgsall
+data <- cgsspr
 
 ```
 
-#Look for outliers
-```{r}
-#Look for any outliers in morphometric data
 
-#Body mass
-par(mfrow=c(1, 2))
-plot(data$wgt, data$rhf.avg, main="With Outliers", xlab="Body Mass", ylab="RHF Avg (mm)", pch="*", col="red", cex=2) 
-abline(lm(wgt ~ rhf.avg, data=data), col="blue", lwd=3, lty=2)
-
-outlier_values <- boxplot.stats(data$wgt)$out  # outlier values.
-boxplot(data$wgt, main="Mass (g)", boxwex=0.1)
-mtext(paste("Outliers: ", paste(outlier_values, collapse=", ")), cex=0.6)
-
-print(outlier_values)#RHF Outliers to remove - look at each of these cases individually and give explanation to keep/remove
-
-#Removing Outliers - example code from red squirrel data. This can be done for any variable that needs outliers removed. 
-
-#With red squirrel data, we remove the smallest individual, squirrel ID = 24827; a male caught only once (fall QMR scan) with no other records. Can't be sure whether it was a juvenile or adult. 
-
-data <- data %>%
-  filter(!squirrel.id %in% (24827)) #We remove this record based on the squirrel ID (squirrel.id = 24827) as there is only one record for that individual. You may have to change what variable you are filtering on (may be better to remove based off a value)
-
-
-#RHF Avg
-par(mfrow=c(1, 2))
-plot(data$wgt, data$rhf.avg, main="With Outliers", xlab="Body Mass", ylab="RHF Avg (mm)", pch="*", col="red", cex=2) 
-abline(lm(wgt ~ rhf.avg, data=data), col="blue", lwd=3, lty=2)
-
-outlier_values <- boxplot.stats(data$rhf.avg)$out  # outlier values.
-boxplot(data$rhf.avg, main="RHF Avg (mm)", boxwex=0.1)
-mtext(paste("Outliers: ", paste(outlier_values, collapse=", ")), cex=0.6)
-
-print(outlier_values)#RHF Outliers to remove 
-
-
-#Zyg Avg
-par(mfrow=c(1, 2))
-plot(data$wgt, data$zyg.avg, main="With Outliers", xlab="Body Mass", ylab="Zyg Avg (mm)", pch="*", col="red", cex=2) 
-abline(lm(wgt~ rhf.avg, data=data), col="blue", lwd=3, lty=2)
-
-outlier_values <- boxplot.stats(data$zyg.avg)$out  # outlier values.
-boxplot(data$zyg.avg, main="Zyg Avg (mm)", boxwex=0.1)
-mtext(paste("Outliers: ", paste(outlier_values, collapse=", ")), cex=0.6)
-
-print(outlier_values) #Zyg Outliers to potentially remove 
-
-
-#Cooks Distance for RHF and mass
-mod <- lm(rhf.avg ~ wgt, data=data)
-cooksd <- cooks.distance(mod)
-
-par(mfrow=c(1, 1))
-plot(cooksd, pch="*", cex=2, main="Influential Obs by Cooks distance")  # plot cook's distance
-abline(h = 4*mean(cooksd, na.rm=T), col="red")  # add cutoff line
-text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red")  # add labels
-
-
-#Histogram of rhf and zyg to help visualize these data. 
-
-hist(data$rhf.avg)
-mean(data$rhf.avg, na.rm = TRUE)
-sd(data$rhf.avg, na.rm = TRUE)
-
-hist(data$zyg.avg)
-mean(data$zyg.avg, na.rm = TRUE)
-sd(data$zyg.avg, na.rm = TRUE)
-
-hist(data$wgt)
-mean(data$wgt, na.rm = TRUE)
-sd(data$wgt, na.rm = TRUE)
-
-#Relationship between zyg and mass
-qplot(wgt, zyg.avg, 
-      color = sex,
-      xlab = "Body Mass (g)", 
-      ylab = "Zyg width (mm)",
-      data = data)+ 
-     stat_smooth(method="lm", alpha=0.2) + 
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-zm1 <- ggplot(data, aes(wgt, zyg.avg, colour=sex)) +
- geom_point() +  stat_smooth(method="lm", alpha=0.2) +
-  scale_color_manual(values=c("orange2", "dodgerblue4", "red")) +
-  xlab("Body Mass (g)") + ylab("Zygomatic width (mm)") +
- # ggtitle("Columbian Ground Squirrel") +
-   theme_bw()
-ggExtra::ggMarginal(zm1, type = "density", groupColour =TRUE, groupFill = TRUE)
-
-zyg.m1 = lm(zyg.avg ~ wgt + sex, 
-            data = data)
-summary(zyg.m1) 
-
-#Relationship between rhf and mass
-qplot(wgt, rhf.avg, 
-      color = sex,
-      xlab = "Body Mass (g)", 
-      ylab = "RHF length (mm)",
-      data = data)+ 
-     stat_smooth(method="lm", alpha=0.2) + 
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-rm1 <- ggplot(data, aes(wgt, rhf.avg, colour=sex)) +
- geom_point() +  stat_smooth(method="lm", alpha=0.2) +
-  scale_color_manual(values=c("orange2", "dodgerblue4", "red")) +
-  xlab("Body Mass (g)") + ylab("Right hind foot length(mm)") +
- # ggtitle("Columbian Ground Squirrel") +
-   theme_bw()
-ggExtra::ggMarginal(rm1, type = "density", groupColour =TRUE, groupFill = TRUE)
-
-rhf.m1 = lm(rhf.avg ~ wgt + sex, 
-            data = data)
-summary(rhf.m1) 
-
-#Relationship between zyg and RHF
-rzm1= lm(rhf.avg ~ zyg.avg + sex, 
-            data = data)
-summary(rhf.m1) 
-
-rz1 <- ggplot(data, aes(rhf.avg, zyg.avg, colour=sex)) +
- geom_point() +  stat_smooth(method="lm", alpha=0.2) +
-  scale_color_manual(values=c("orange2", "dodgerblue4", "red")) +
-  xlab("Right hind foot length (mm)") + ylab("Zygomatic width (mm)") +
-#  ggtitle("Red Squirrel") +
-   theme_bw()
-ggExtra::ggMarginal(rz1, type = "density", groupColour =TRUE, groupFill = TRUE)
-
-
-
-```
-#Summary data 
-```{r}
-#Mass
-
-massbox1 <- ggplot(data, aes(sex, wgt))
-massbox1 + geom_boxplot() +
-               xlab("Sex") + ylab("Body Mass (g)")+
-              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y = element_text(size=15))
-
-wgt1 <- aov(wgt ~ sex, data = data)
-summary(wgt1)
-
-
-
-#RHF
-mean(data$rhf.avg)
-sd(data$rhf.avg)
-
-mean(data$rhf.avg)
-sd(data$rhf.avg)
-
-rhfbox1 <- ggplot(data, aes(sex, rhf.avg))
-rhfbox1 + geom_boxplot() +
-               xlab("Sex") + ylab("RHF (mm)") + ggtitle("Fall") + 
-              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y =
-                      element_text(size=15))
-
-rhf1 <- aov(rhf.avg ~ sex, data = data)
-summary(rhf1)
-
-qplot(wgt, rhf.avg,
-      color = sex,
-      xlab = "wgt (g)",
-      ylab = "rhf.avg (mm)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Zyg
-mean(data$zyg.avg)
-sd(data$zyg.avg)
-
-
-
-zygbox3<- ggplot(data, aes(sex, zyg.avg))
-zygbox3 + geom_boxplot() +
-               xlab("Sex") + ylab("Zyg (mm)")+ ggtitle("Fall") + 
-              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y = element_text(size=15))
-
-zyg1 <- aov(zyg.avg ~ sex, data = data)
-summary(zyg1)
- 
-qplot(wgt, zyg.avg,
-      color = sex,
-      xlab = "wgt (g)",
-      ylab = "zyg.avg (mm)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Fat
-mean(data$fat)
-sd(data$fat)
-
-mean(data$fatp)
-sd(data$fatp)
-
-
-fatbox4<- ggplot(data, aes(sex, fat))
-fatbox4 + geom_boxplot() +
-               xlab("Sex") + ylab("Fat %")+  ggtitle("Fall") + 
-              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y = element_text(size=15))
-
-fat1 <- aov(fat ~ sex, data = data)
-summary(fat1)
-
-qplot(wgt, fat,
-      color = sex,
-      xlab = "wgt (g)",
-      ylab = "fat (g)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(wgt, fatp,
-      color = sex,
-      xlab = "wgt (g)",
-      ylab = "fat (%)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Lean
-mean(data$lean)
-sd(data$lean)
-
-mean(data$leanp)
-sd(data$leanp)
-
-leanbox5<- ggplot(data, aes(sex, lean))
-leanbox5 + geom_boxplot() +
-               xlab("Sex") + ylab("Lean %")+ ggtitle("Fall") + 
-              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y = element_text(size=15))
-
-lean1 <- aov(lean ~ sex, data = data)
-summary(lean1)
-
-qplot(wgt, lean,
-      color = sex,
-      xlab = "wgt (g)",
-      ylab = "lean (g)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-qplot(wgt, leanp,
-      color = sex,
-      xlab = "wgt (g)",
-      ylab = "lean (%)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-#lookhere
-#Relationship between lean and rhf
-qplot(zyg.avg, fatp,
-  #    color = sex,
-      xlab = "rhf.avg",
-      ylab = "lean %",
-      main = "Spring",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-```
-
-
-
-#Split data by sex (and rejoin)
-
+#Split data by sex, scale, and rejoin
 ```{r}
 #Females
 data.f <- data %>%
@@ -564,7 +88,7 @@ data.f <- data.f %>%
     logleanp = log(leanp +1 ), 
     logfatp = log(fatp + 1))
 
-
+#Scale within sex
 data.f <- data.f %>% 
    mutate(across(c("logwgt", "logrhf", "logzyg", "loglean", "logfat", "logleanp", "logfatp"), ~(c(scale(.)))))
 
@@ -581,8 +105,9 @@ data.f <- data.f %>%
 
 summary(data.f)
 
-#Relationship between zyg and rhf ?
-cor.test(data.f$rhf.scl, data.f$zyg.scl)
+#Relationship between zyg and rhf in females?
+cor.test(data.f$rhf.scl, data.f$zyg.scl) 
+
 
 
 #Males 
@@ -598,7 +123,7 @@ data.m <- data.m %>%
     logleanp = log(leanp +1 ), 
     logfatp = log(fatp + 1))
 
-
+#Scale within sex
 data.m <- data.m %>% 
    mutate(across(c("logwgt", "logrhf", "logzyg", "loglean", "logfat", "logleanp", "logfatp"), ~(c(scale(.)))))
 
@@ -615,412 +140,229 @@ data.m <- data.m %>%
 
 summary(data.m)
 
+#Relationship between zyg and rhf in males?
+cor.test(data.m$rhf.scl, data.m$zyg.scl) 
+
+
+#Rejoin male and afemale data 
 data <- rbind(data.m, data.f)
+```
+
+#Relationship between RHF and mass
+```{r, fig.width=5,fig.height=3}
+#Linear model of RHF with mass and sex
+rhf.m1 = lm(rhf.avg ~ wgt, 
+            data = data)
+summary(rhf.m1) 
+
+{plot((wgt.scl) ~ rhf.avg, data= data, xlab= "Right hind foot length (scaled)", ylab = " Body Mass (scaled)", main = "Regression of scaled body mass on scaled RHF")}
+
+figa <- ggplot(data = data, 
+              aes(x=wgt, y=rhf.avg, fill=sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Right hind foot length (mm)") + xlab("Body mass (g)") +
+   ggtitle('B) Prairie dogs, pre-winter') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+figa
+```
+#Relationship between Zyg and mass
+```{r, fig.width=5,fig.height=3}
+#ZYG by mass and sex 
+zyg.m1 = lm(zyg.avg ~ wgt + sex, 
+            data = data)
+summary(zyg.m1) 
+
+{plot((wgt.scl) ~ zyg.avg, data= data, xlab= "Zygomatic width (scaled)", ylab = " Body Mass (scaled)", main = "Regression of scaled body mass on scaled zyg")}
+
+
+figa <- ggplot(data = data, 
+              aes(x=wgt, y=zyg.avg, fill=sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Zygomatic width (mm)") + xlab("Body mass (g)") +
+   ggtitle('B) Prairie dogs, pre-winter') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+figa
+```
+#Relationship between zyg and RHF
+```{r, fig.width=5,fig.height=3}
+
+rzm1= lm(rhf.avg ~ zyg.avg + sex, 
+            data = data)
+summary(rzm1) 
+
+
+zyg.m1 = lm(zyg.avg ~ wgt + sex, 
+            data = data)
+summary(zyg.m1) 
+
+figS1 <- ggplot(data = data, 
+              aes(x=rhf.avg, y=zyg.avg, fill=sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','#0072b2','turquoise4','green','blue')) +
+   ylab("Zygomatic width (mm)") + xlab("Right hind foot length (mm)") +
+   ggtitle('B) Prairie dogs, pre-winter') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','#0072b2','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+figS1
+
+
+
 
 #Relationship between zyg and rhf ?
-cor.test(data.m$rhf.scl, data.m$zyg.scl) #RSQ no 
+#Females
+cor.test(data.f$rhf.avg, data.f$zyg.avg) 
+
+
+#Relationship between zyg and rhf ?
+#Males
+cor.test(data.m$rhf.avg, data.m$zyg.avg)
+
+
+```
+#Summary data for tables
+```{r}
+
+data %>% count(sex) 
+#summarize by sex 
+summbysex <- data %>%                                       
+  group_by(sex) %>%                        
+  summarize(wgt.mn = mean(wgt), 
+            wgt.sem = std(wgt), 
+            rhf.mn = mean(rhf.avg), 
+            rhf.sem = std(rhf.avg), 
+            zyg.mn = mean(zyg.avg), 
+            zyg.sem = std(zyg.avg),
+            fat.mn = mean(fat), 
+            fat.sem = std(fat), 
+            lean.mn = mean(lean), 
+            lean.sem = std(lean), 
+            fatp.mn = mean(fatp), 
+            leanp.mn = mean(leanp))  
+
+
+#Coefficient of variation 
+CoV <- data %>%                                       
+  group_by(sex) %>%                        
+  summarize(cvwgt = CV(wgt), 
+            cvrhf = CV(rhf.avg), 
+            cvzyg = CV(zyg.avg), 
+            cvfat = CV(fat), 
+            cvlean = CV(lean), 
+            cvfatp = CV(fatp), 
+            cvleanp = CV(leanp)) 
 
 ```
 
-#Zygomatic and RHF first look 
+
+#Sex differences  + boxplots to visualize
 ```{r}
+#Mass
+massbox1 <- ggplot(data, aes(sex, wgt))
+massbox1 + geom_boxplot() +
+               xlab("Sex") + ylab("Body Mass (g)")+
+              theme(axis.text.x = element_text(size=20), axis.title = element_text(size = 20), axis.text.y = element_text(size=20))
 
-#Zygo and mass
+wgt1 <- t.test(wgt ~ sex, data = data)
+wgt1
 
-zm2 <- ggplot(data, aes(wgt.scl, zyg.scl, colour=sex)) +
- geom_point() +  stat_smooth(method="lm", alpha=0.2) +
-  scale_color_manual(values=c("orange2", "dodgerblue4", "red")) +
-  xlab("Body Mass (scaled") + ylab("Zygomatic width (scaled)") +
- # ggtitle("Columbian Ground Squirrel") +
-   theme_bw()
-ggExtra::ggMarginal(zm1, type = "density", groupColour =TRUE, groupFill = TRUE)
 
-#Relationship between zyg and mass?
-cor.test(data$wgt.scl, data$zyg.scl) #all
-cor.test(data.m$wgt.scl, data.m$zyg.scl) #males
-cor.test(data.f$wgt.scl, data.f$zyg.scl) #females
 
-
-#RHF and mass
-
-rz2 <- ggplot(data, aes(zyg.scl, rhf.scl, colour=sex)) +
- geom_point() +  stat_smooth(method="lm", alpha=0.2) +
-  scale_color_manual(values=c("orange2", "dodgerblue4", "red")) +
-  xlab("Right hind foot (scaled)") + ylab("Zygomatic width (scaled)") +
- # ggtitle("Columbian Ground Squirrel") +
-   theme_bw()
-ggExtra::ggMarginal(rz2, type = "density", groupColour =TRUE, groupFill = TRUE)
-
-#Relationship between rhf and mass?
-cor.test(data$wgt.scl, data$rhf.scl) #all
-cor.test(data.m$wgt.scl, data.m$rhf.scl) #males
-cor.test(data.f$wgt.scl, data.f$rhf.scl) #females
-
-```
-
-#Calculate BCI from skeletal measurements - PCA based. All data. 
-```{r}
-
-#Log (RHF)
-qplot(rhf.scl, wgt.scl,
-       colour = sex,
-      xlab = "Right hind foot",
-      ylab = "Body Mass",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Log(Zyg)
-qplot(zyg.scl, wgt.scl,
-       colour = sex,
-      xlab = "Zygomatic width",
-      ylab = "Body Mass",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Principal components analysis to collapse RHF and Zyg into an estimate of skeletal size
-
-skel <- as.data.frame(cbind(data$rhf.scl, data$zyg.scl))
-head(skel)
-
-skel.pca <- prcomp(skel, center=TRUE, scale.=TRUE)
-skel.pca #Look at standard deviations, rotations for each of the newly generated componenents 
-
-
-summary(skel.pca)
-
-plot(prcomp(skel, center = TRUE, scale = TRUE))
-
-pc.score <- skel.pca$x #PC1 and PC2 put into an object pc.score that we then cbind to the dataset. 
-
-data <- cbind(data, pc.score)
-
-head(data)
-```
-
-#Look at how skeletel measurements correlate with PC1 - all data 
-```{r}
-#Relationship between logzyg and PCs
-
-qplot(PC1, zyg.scl,
-      color = sex,
-      xlab = "PC1",
-      ylab = "Zygomatic width (scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Relationship between logrhf and PCs
-
-qplot(PC1, rhf.scl,
-      color = sex,
-      xlab = "PC1",
-      ylab = "Right hind foot (scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-
-#Get residuals of body mass regressed on PCs. The residuals are what will function as the BCI.
-
-lm1.PC1 <- lm(wgt.scl ~ PC1, data=data)
-attributes(lm1.PC1)
-summary(lm1.PC1)
-visreg(lm1.PC1)
-
-{plot((wgt.scl) ~ PC1, data= data, xlab= "PC1", ylab = "Body Mass (scaled)", main = "Regression of scaled body mass on PC1")
-abline(lm(wgt.scl ~ PC1, data=data), lty=2)}
-
-
-
-
-cor.test(data$PC1, data$wgt.scl)
-
-
-# Check normality 
-
-plot(lm1.PC1)
-shapiro.test(lm1.PC1$residuals)
-
-
-#Residuals from this regression of log body mass ~ PC1 will serve as the body condition index (BCI). We keep in PC2 
-
-data$BCI.1 <- lm1.PC1$residuals 
-
-#Check to see how body condition index changes with body mass, body size and various skeletal measurements. 
-
-plot(BCI.1 ~ PC1, data=data, xlab="PC1", ylab="Regression residuals (BCI)")
-
-plot(BCI.1 ~ logwgt, data=data, xlab="Body mass (g)", ylab="Regression residuals (BCI)")
-
-```
-
-#Calculate BCI from skeletal measurements - PCA based. Females
-```{r}
-
-#Log (RHF)
-qplot(rhf.scl, wgt.scl,
-       colour = sex,
-      xlab = "Right hind foot (scaled)",
-      ylab = "Body Mass (Scaled)",
-      data = data.f)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Log(Zyg)
-qplot(zyg.scl, wgt.scl,
-       colour = sex,
-      xlab = "zyg.scl",
-      ylab = "wgt.scl",
-      data = data.f)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Principal components analysis to collapse RHF and Zyg into an estimate of skeletal size
-
-skel.f <- as.data.frame(cbind(data.f$rhf.scl, data.f$zyg.scl))
-head(skel.f)
-
-skel.pca.f <- prcomp(skel.f, center=TRUE, scale.=TRUE)
-skel.pca.f #Look at standard deviations, rotations for each of the newly generated componenents 
-
-
-summary(skel.pca.f)
-
-plot(prcomp(skel.f, center = TRUE, scale = TRUE))
-
-pc.score.f <- skel.pca.f$x #PC1 and PC2 put into an object pc.score that we then cbind to the dataset. 
-
-data.f <- cbind(data.f, pc.score.f)
-
-head(data.f)
-```
-
-#Look at how skeletel measurements correlate with PC1 - Females only
-```{r}
-#Relationship between logzyg and PCs
-
-qplot(PC1, zyg.scl,
-      color = sex,
-      xlab = "PC1",
-      ylab = "Zygomatic width (scaled)",
-      data = data.f)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Relationship between logrhf and PCs
-
-qplot(PC1, rhf.scl,
-      color = sex,
-      xlab = "PC1",
-      ylab = "Right hind foot length (scaled)",
-      data = data.f)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Get residuals of body mass regressed on PCs. The residuals are what will function as the BCI.
-
-lm1.PC1 <- lm(wgt.scl ~ PC1, data=data.f)
-attributes(lm1.PC1)
-summary(lm1.PC1)
-visreg(lm1.PC1)
-
-{plot((wgt.scl) ~ PC1, data= data.f, xlab= "PC1", ylab = "Body Mass (scaled)", main = "Regression of scaled body mass on PC1")
-abline(lm(logwgt ~ PC1, data=data.f), lty=2)}
-
-
-
-cor.test(data.f$PC1, data.f$wgt.scl)
-
-# Check normality 
-
-plot(lm1.PC1)
-shapiro.test(lm1.PC1$residuals)
-
-data.f$BCI.1 <- lm1.PC1$residuals 
-
-
-#Check to see how body condition index changes with body mass, body size and various skeletal measurements.
-
-plot(BCI.1 ~ PC1, data=data.f, xlab="PC1", ylab="Regression residuals (BCI)")
-
-plot(BCI.1 ~ wgt.scl, data=data.f, xlab="Body mass (scaled)", ylab="Regression residuals (BCI)")
-plot(BCI.1 ~ rhf.scl, data=data.f, xlab="RHF scaled", ylab="Regression residuals (BCI)")
-plot(BCI.1 ~ zyg.scl, data=data.f, xlab="Zyg scaled)", ylab="Regression residuals (BCI)")
-
-```
-#Calculate BCI from skeletal measurements - PCA based, Males
-```{r}
-
-#Log (RHF)
-qplot(rhf.scl, wgt.scl,
-       colour = sex,
-      xlab = "Rigt hind foot (scaled)",
-      ylab = "Body mass (scaled)",
-      data = data.m)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Log(Zyg)
-qplot(zyg.scl, wgt.scl,
-       colour = sex,
-      xlab = "Zygomatic width (scaled)",
-      ylab = "Body Mass (scaled)",
-      data = data.m)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Principal components analysis to collapse RHF and Zyg into an estimate of skeletal size
-
-skel.m <- as.data.frame(cbind(data.m$rhf.scl, data.m$zyg.scl))
-head(skel.m)
-
-skel.pca.m <- prcomp(skel.m, center=TRUE, scale.=TRUE)
-skel.pca.m #Look at standard deviations, rotations for each of the newly generated componenents 
-
-
-summary(skel.pca.m)
-
-plot(prcomp(skel.m, center = TRUE, scale = TRUE))
-
-pc.score.m <- skel.pca.m$x #PC1 and PC2 put into an object pc.score that we then cbind to the dataset. 
-
-data.m <- cbind(data.m, pc.score.m)
-
-head(data.m)
-```
-
-
-#Look at how skeletel measurements correlate with PC1 - Males only
-```{r}
-#Relationship between logzyg and PCs
-
-qplot(PC1, zyg.scl,
-      color = sex,
-      xlab = "PC1",
-      ylab = "Zygomatic width (scaled)",
-      data = data.m)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-#Relationship between logrhf and PCs
-
-qplot(PC1, rhf.scl,
-      color = sex,
-      xlab = "PC1",
-      ylab = "Right hind foot (scaled)",
-      data = data.m)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-
-#Get residuals of body mass regressed on PCs. The residuals are what will function as the BCI.
-
-lm1.PC1 <- lm(wgt.scl ~ PC1, data=data.m)
-attributes(lm1.PC1)
-summary(lm1.PC1)
-visreg(lm1.PC1)
-
-{plot((logwgt) ~ PC1, data= data.m, xlab= "PC1", ylab = "Body Mass (scaled)", main = "Regression of scaled body mass on PC1")
-abline(lm(logwgt ~ PC1, data=data.m), lty=2)}
-
-
-
-cor.test(data.m$PC1, data.m$wgt.scl)
-
-# Check normality 
-
-plot(lm1.PC1)
-shapiro.test(lm1.PC1$residuals)
-
-data.m$BCI.1 <- lm1.PC1$residuals 
-
-
-#Check to see how body condition index changes with body mass, body size and various skeletal measurements.
-
-plot(BCI.1 ~ PC1, data=data.m, xlab="PC1", ylab="Regression residuals (BCI)")
-
-plot(BCI.1 ~ wgt.scl, data=data.m, xlab="Body mass (scaled)", ylab="Regression residuals (BCI)")
-plot(BCI.1 ~ rhf.scl, data=data.m, xlab="Right hind foot (scaled)", ylab="Regression residuals (BCI)")
-plot(BCI.1 ~ zyg.scl, data=data.m, xlab="Zygomatic width (scaled)", ylab="Regression residuals (BCI)")
-```
-
-
-
-#Calculate BCI from singular skeletal measurements - RHF or ZYG on BM resids, all data
-```{r}
-####
 #RHF
-####
-rhfm1 <- lm(wgt.scl ~ rhf.scl, data=data)
-attributes(rhfm1)
-summary(rhfm1)
-visreg(rhfm1)
+rhfbox1 <- ggplot(data, aes(sex, rhf.avg))
+rhfbox1 + geom_boxplot() +
+               xlab("Sex") + ylab("RHF (mm)") + ggtitle("Fall") + 
+              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y =
+                      element_text(size=15))
 
-{plot((wgt.scl) ~ rhf.scl, data= data, xlab= "Right hind foot (scaled)", ylab = "Body Mass (scaled)", main = "Regression of scaled body mass on scaled RHF")
-abline(lm(wgt.scl ~ rhf.scl, data = data), lty=2)}
-
-
-#Check normality 
-plot(rhfm1)
-shapiro.test(rhfm1$residuals)
-
-#Residuals from this regression of log body mass ~ log RHF will serve as the body condition index RHF (BCI.RHF).
-
-data$BCI.RHF <- rhfm1$residuals 
+rhf.avg1 <- t.test(rhf.avg ~ sex, data = data)
+rhf.avg1
 
 
-####
-#ZYG
-####
-zygm1 <- lm(wgt.scl ~ zyg.scl, data=data)
-attributes(zygm1)
-summary(zygm1)
-visreg(zygm1)
 
-{plot((wgt.scl) ~ zyg.scl, data= data, xlab= "Zygomatic width (scaled)", ylab = "Body Mass (scaled)", main = "Regression of scaled body mass on scaled zyg")
-abline(lm(wgt.scl ~ zyg.scl, data=data), lty=2)}
+#Zyg
 
+zygbox3<- ggplot(data, aes(sex, zyg.avg))
+zygbox3 + geom_boxplot() +
+               xlab("Sex") + ylab("Zyg (mm)")+ ggtitle("Fall") + 
+              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y = element_text(size=15))
 
-#Check normality 
-plot(zygm1)
-shapiro.test(zygm1$residuals)
+zyg.avg1 <- t.test(zyg.avg ~ sex, data = data)
+zyg.avg1
 
 
-#Residuals from this regression of log body mass ~ log RHF will serve as the body condition index RHF (BCI.RHF).
 
-data$BCI.ZYG <- zygm1$residuals 
+#Fat
+fatbox4<- ggplot(data, aes(sex, fat))
+fatbox4 + geom_boxplot() +
+               xlab("Sex") + ylab("Fat %")+  ggtitle("Fall") + 
+              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y = element_text(size=15), aspect.ratio = 1)
+
+fat1 <- t.test(fat ~ sex, data = data)
+fat1
+
+
+#Lean
+leanbox5<- ggplot(data, aes(sex, lean))
+leanbox5 + geom_boxplot() +
+               xlab("Sex") + ylab("Lean %")+ ggtitle("Fall") + 
+              theme(axis.text.x = element_text(size=15), axis.title = element_text(size = 18), axis.text.y = element_text(size=15), aspect.ratio = 1)
+
+lean1 <- t.test(lean ~ sex, data = data)
+lean1
 
 ```
 
-#Calculate BCI from singular skeletal measurements - RHF or ZYG on BM resids, Females only
+#Calculate BCI from singular skeletal measurements - RHF or ZYG on BM resids, Females only (Male code follows)
 ```{r}
-
 ####
 #RHF
 ####
@@ -1028,8 +370,8 @@ rhfm1.f <- lm(wgt.scl ~ rhf.scl, data=data.f)
 attributes(rhfm1.f)
 summary(rhfm1.f)
 
-{plot((wgt.scl) ~ rhf.scl, data= data.f, xlab= "Right hind foot (scaled)", ylab = " Body Mass (scaled)", main = "Regression of scaled body mass on scaled RHF - Females only")
-abline(lm(logwgt ~ logrhf, data=data.f), lty=2)}
+plot(rhfm1.f, which=1)
+
 
 
 #Check normality 
@@ -1038,7 +380,10 @@ shapiro.test(rhfm1.f$residuals)
 
 #Residuals from this regression of log body mass ~ log RHF will serve as the body condition index RHF (BCI.RHF).
 
-data.f$BCI.RHFbysex <- rhfm1.f$residuals 
+data.f$BCI.RHF <- rhfm1.f$residuals 
+
+
+
 
 
 ####
@@ -1048,8 +393,7 @@ zygm1.f <- lm(wgt.scl ~ zyg.scl, data=data.f)
 attributes(zygm1.f)
 summary(zygm1.f)
 
-{plot((wgt.scl) ~ zyg.scl, data= data.f, xlab= "Zygomatic width (scaled)", ylab = "Body Mass (scaled)", main = "Regression of scaled body mass on scaled zygomatic width - Females only")
-abline(lm(wgt.scl ~ zyg.scl, data=data.f), lty=2)}
+plot(zygm1.f, which=1)
 
 
 #Check normality 
@@ -1058,7 +402,7 @@ shapiro.test(zygm1.f$residuals)
 
 #Residuals from this regression of log body mass ~ log RHF will serve as the body condition index RHF (BCI.RHF).
 
-data.f$BCI.ZYGbysex <- zygm1.f$residuals 
+data.f$BCI.ZYG <- zygm1.f$residuals 
 
 ```
 
@@ -1072,9 +416,7 @@ rhfm1.m <- lm(wgt.scl ~ rhf.scl, data=data.m)
 attributes(rhfm1.m)
 summary(rhfm1.m)
 
-{plot((wgt.scl) ~ rhf.scl, data= data.m, xlab= "Right hind food (scaled)", ylab = "Body Mass (scaled)", main = "Regression of scaled body mass on scaled RHF - Males only")
-abline(lm(wgt.scl ~ rhf.scl, data=data.m), lty=2)}
-
+plot(rhfm1.m, which=1)
 
 #Check normality 
 plot(rhfm1.m)
@@ -1082,7 +424,7 @@ shapiro.test(rhfm1.m$residuals)
 
 #Residuals from this regression of log body mass ~ log RHF will serve as the body condition index RHF (BCI.RHF).
 
-data.m$BCI.RHFbysex <- rhfm1.m$residuals 
+data.m$BCI.RHF <- rhfm1.m$residuals 
 
 
 ####
@@ -1092,8 +434,7 @@ zygm1.m <- lm(wgt.scl ~ zyg.scl, data=data.m)
 attributes(zygm1.m)
 summary(zygm1.m)
 
-{plot((wgt.scl) ~ zyg.scl, data= data.m, xlab= "Zygomatic width (scaled)", ylab = "Body mass (scaled)", main = "Regression of scaled body mass on scaled zygomatic width - Males only")
-abline(lm(wgt.scl ~ zyg.scl, data=data.m), lty=2)}
+plot(zygm1.m, which=1)
 
 
 #Check normality 
@@ -1102,7 +443,7 @@ shapiro.test(zygm1.m$residuals)
 
 #Residuals from this regression of log body mass ~ log RHF will serve as the body condition index RHF (BCI.RHF).
 
-data.m$BCI.ZYGbysex <- zygm1.m$residuals 
+data.m$BCI.ZYG <- zygm1.m$residuals 
 
 ```
 
@@ -1115,407 +456,576 @@ data.bysex <- rbind(data.m, data.f)
 head(data.bysex)
 
 data.bysex <- data.bysex %>%
-  mutate(BCI.1.bysex = BCI.1) %>%
-  select(squirrel.id, BCI.1.bysex, BCI.RHFbysex, BCI.ZYGbysex)
+  dplyr::select(squirrel_id, 
+                BCI.RHF, 
+                BCI.ZYG)
 
-data <- inner_join(data, data.bysex, by = c("squirrel.id"))
-
+data <- inner_join(data, data.bysex, by = c("squirrel_id"))
 
 
 ```
 
-
-
-#Analyzing BCI against fat, lean. All data
-
+#Write data to CSV - this gets read in later for 3-species comparison once this code has been run for each species/season. 
 ```{r}
-#FAT
-
-qplot(BCI.1, fat.scl,
-      color = sex,
-      xlab = "BCI.1",
-      ylab = "Fat (scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.1.bysex, fat.scl,
-     color = sex,
-      xlab = "BCI.1.bysex",
-      ylab = "Fat (scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-qplot(BCI.1, fatp.scl,
-      color = sex,
-      xlab = "BCI.1",
-      ylab = "Fat (% scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.1.bysex, fatp.scl,
-     color = sex,
-      xlab = "BCI.1.bysex",
-      ylab = "Fat (% scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-fatm1 <- lm(fat.scl ~ BCI.1 + sex, data=data) #Regress residuals from body mass/PC1 on absolute fat
-fat.resid1 = resid(fatm1)
-summary(fatm1)
-
-
-fatm2 <- lm(fat.scl ~ BCI.1.bysex + sex, data=data) #Regress residuals from body mass/PC1 on absolute fat
-fat.resid2 = resid(fatm2)
-summary(fatm2)
-
-#Model comparisons
-
-summary(fatm1) #BCI calculated for total
-summary(fatm2) #BCI calculated by sex
-
-
-cor.test(data$fat.scl, data$BCI.1) 
-cor.test(data$fat.scl, data$BCI.1.bysex) 
-
-AIC(fatm1) # by pop
-AIC(fatm2) #by sex
-AIC(fatm1) - AIC(fatm2) 
-
-
-
-## LEAN
-
-leanm1 <- lm(lean.scl ~ BCI.1, data=data) #Regress residuals from body mass/PC1 on absolute lean
-lean.resid1 = resid(leanm1)
-summary(leanm1)
-
-leanm2 <- lm(lean.scl ~ BCI.1.bysex, data=data) #Regress residuals from body mass/PC1 on absolute lean
-lean.resid2 = resid(leanm2)
-summary(leanm2)
- 
-qplot(BCI.1, lean.scl,
-       color = sex,
-      xlab = "BCI.1",
-      ylab = "Lean (scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.1.bysex, lean.scl,
-      color = sex,
-      xlab = "BCI.1.bysex",
-      ylab = "Lean (scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.1, leanp.scl,
-       color = sex,
-      xlab = "BCI.1",
-      ylab = "Lean (% scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.1.bysex, leanp.scl,
-      color = sex,
-      xlab = "BCI.1.bysex",
-      ylab = "Lean (% scaled)",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-#Model comparisons
-
-summary(leanm1) #BCI by pop
-summary(leanm2) #BCI by sex
-
-cor.test(data$loglean, data$BCI.1) 
-cor.test(data$loglean, data$BCI.1.bysex) 
-
-AIC(leanm1)#BCI by pop
-AIC(leanm2)#BCI by sex
-
-AIC(leanm1) - AIC(leanm2)
-
-
-
-###RHF BCI
-#FAT
-
-qplot(BCI.RHF, fat.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Fat (g scaled)",
-      main = "Population-derived BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.RHFbysex, fat.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Fat (g scaled)",
-      main = "By-Sex BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.RHF, fatp.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Fat (% scaled)",
-      main = "Population-derived BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.RHFbysex, fatp.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Fat (g scaled)",
-      main = "By-Sex BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-fat.BCIRm1 <- lm(fat.scl ~ BCI.RHF + sex, data=data) #Regress residuals from body mass/PC1 on absolute fat
-fat.resid1 = resid(fat.BCIRm1)
-summary(fat.BCIRm1)
-
-fat.BCIRm2 <- lm(logfat ~ BCI.RHFbysex + sex, data=data) #Regress residuals from body mass/PC1 on absolute fat
-fat.resid2 = resid(fat.BCIRm2)
-summary(fat.BCIRm2)
-
-#Model comparisons
-
-summary(fat.BCIRm1) #BCI calculated for total
-summary(fat.BCIRm2) #BCI calculated by sex
-
-cor.test(data$logfat, data$BCI.RHF) 
-cor.test(data$logfat, data$BCI.RHFbysex) 
-
-AIC(fat.BCIRm1) #by pop
-AIC(fat.BCIRm2) #by sex
-
-AIC(fat.BCIRm1) - AIC(fat.BCIRm2) 
-
-#LEAN
-
-qplot(BCI.RHF, lean.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Lean (scaled)",
-      main = "Population-derived BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.RHFbysex, lean.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Lean (scaled)",
-      main = "By-Sex BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-qplot(BCI.RHF, leanp.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Lean (scaled)",
-      main = "Population-derived BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.RHFbysex, leanp.scl,
-      color = sex,
-      xlab = "BCI-RHF",
-      ylab = "Lean (% scaled)",
-      main = "By-Sex BCI - RHF only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-leanBCIRm1 <- lm(lean.scl ~ BCI.RHF, data=data) #Regress residuals from body mass/PC1 on absolute lean
-lean.resid1 = resid(leanBCIRm1)
-summary(leanBCIRm1)
-
-lean.BCIRm2 <- lm(lean.scl ~ BCI.RHFbysex, data=data) #Regress residuals from body mass/PC1 on absolute lean
-lean.resid2 = resid(lean.BCIRm2)
-summary(lean.BCIRm2)
-
-#Model comparisons
-
-summary(leanBCIRm1) #BCI by pop
-summary(lean.BCIRm2) #BCI by sex
-
-cor.test(data$lean.scl, data$BCI.RHF) 
-cor.test(data$lean.scl, data$BCI.RHFbysex) 
-
-AIC(leanBCIRm1) #by pop
-AIC(lean.BCIRm2) # by sex
-AIC(leanBCIRm1) - AIC(lean.BCIRm2) 
-
-
-
-### Zyg BCI
-#FAT
-
-qplot(BCI.ZYG, fat.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Fat (g scaled)",
-      main = "Population-derived BCI - Zyg only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.ZYGbysex, fat.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Fat (g scaled)",
-      main = "By-Sex BCI - Zyg only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.ZYG, fatp.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Fat (% scaled)",
-      main = "Population-derived BCI - Zyg only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.ZYGbysex, fatp.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Fat (% scaled)",
-      main = "By-Sex BCI - Zyg only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-
-fat.BCIZm1 <- lm(fat.scl ~ BCI.ZYG + sex, data=data) #Regress residuals from body mass/PC1 on absolute fat
-fat.resid1 = resid(fat.BCIZm1)
-summary(fat.BCIZm1)
-
-fat.BCIZm2 <- lm(fat.scl ~ BCI.ZYGbysex + sex, data=data) #Regress residuals from body mass/PC1 on absolute fat
-fat.resid2 = resid(fat.BCIZm2)
-summary(fat.BCIZm2)
-
-#Model comparisons
-
-summary(fat.BCIZm1) #BCI calculated for total
-summary(fat.BCIZm2) #BCI calculated by sex
-
-cor.test(data$fat.scl, data$BCI.ZYG) 
-cor.test(data$fat.scl, data$BCI.ZYGbysex) 
-
-AIC(fat.BCIZm1) #by pop
-AIC(fat.BCIZm2) #by sex
-
-AIC(fat.BCIZm1) - AIC(fat.BCIZm2) 
-
-
-#LEAN
-
-qplot(BCI.ZYG, lean.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Lean (g scaled)",
-      main = "Population-derived BCI - Zyg only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.ZYGbysex, lean.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Lean (g scaled)",
-      main = "By-Sex BCI - ZYG only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.ZYG, leanp.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Lean (% scaled)",
-      main = "Population-derived BCI - Zyg only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-qplot(BCI.ZYGbysex, leanp.scl,
-      color = sex,
-      xlab = "BCI-Zyg",
-      ylab = "Lean (% scaled)",
-      main = "By-Sex BCI - ZYG only",
-      data = data)+
-     stat_smooth(method="lm", alpha=0.2) +
-    scale_color_manual(values=c("orange2", "dodgerblue4", "red"))+
-     theme_bw()
-
-lean.BCIZm1 <- lm(lean.scl ~ BCI.ZYG + sex, data=data) #Regress residuals from body mass/PC1 on absolute lean
-lean.resid1 = resid(lean.BCIZm1)
-summary(lean.BCIZm1)
-
-
-lean.BCIZm2 <- lm(lean.scl ~ BCI.ZYGbysex + sex, data=data) #Regress residuals from body mass/PC1 on absolute lean
-lean.resid2 = resid(lean.BCIZm2)
-summary(lean.BCIZm2)
-
-lean.BCIZm2.2 <- lm(lean.scl ~ BCI.ZYGbysex, data=data) 
-
-
-#Model comparisons
-
-summary(lean.BCIZm1) #BCI calculated for total
-summary(lean.BCIZm2) #BCI calculated by sex
-
-cor.test(data$lean.scl, data$BCI.ZYG) 
-cor.test(data$lean.scl, data$BCI.ZYGbysex) 
-
-AIC(lean.BCIZm1) # by pop
-AIC(lean.BCIZm2) #by sex
-AIC(lean.BCIZm1) - AIC(lean.BCIZm2)
+
+#Uncomment the species to which data is set, reiterate for each species.
+#Red squirrel
+# rsq <- data %>%
+#   dplyr::select(sex,
+# squirrel_id,
+# wgt,
+# rhf.avg,
+# zyg.avg,
+# fat,
+# fat.sd,
+# lean,
+# lean.sd,
+# leanp,
+# fatp,
+# logwgt,
+# logrhf,
+# logzyg,
+# loglean,
+# logfat,
+# wgt.scl,
+# rhf.scl,
+# zyg.scl,
+# lean.scl,
+# fat.scl,
+# BCI.ZYG)%>%
+#   collect()%>%
+#   mutate(BCI = BCI.ZYG)%>%
+#  collect()%>%
+# dplyr::select(-BCI.ZYG)
+# 
+# write.csv(rsq, "rsq-composition.csv")
+
+
+# #Prairie dog
+ # btpd <- data %>%
+ #   mutate(season = "fall")%>%
+ #   dplyr::select(sex,
+ #                 squirrel_id,
+ #                 wgt,
+ #                 rhf.avg,
+ #                 zyg.avg,
+ #                 fat,
+ #                 fat.sd,
+ #                 lean,
+ #                 lean.sd,
+ #                 season,
+ #                 leanp,
+ #                 fatp,
+ #                 logwgt,
+ #                 logrhf,
+ #                 logzyg,
+ #                 loglean,
+ #                 logfat,
+ #                 wgt.scl,
+ #                 rhf.scl,
+ #                 zyg.scl,
+ #                 lean.scl,
+ #                 fat.scl,
+ #                 BCI.ZYG)%>%
+ #   collect()%>%
+ #   mutate(BCI = BCI.ZYG)%>%
+ #  collect()%>%
+ # dplyr::select(-BCI.ZYG)
+ # 
+ # write.csv(btpd, "btpd-composition.csv")
+
+# #Ground squirrel fall
+# cgsfall <- data %>%
+#   mutate(fatsd = fat.sd,
+#          leansd = lean.sd)%>%
+#   collect()%>%
+#   dplyr::select(sex,
+# squirrel_id,
+# wgt,
+# rhf.avg,
+# zyg.avg,
+# fat,
+# fat.sd,
+# lean,
+# lean.sd,
+# season,
+# leanp,
+# fatp,
+# logwgt,
+# logrhf,
+# logzyg,
+# loglean,
+# logfat,
+# wgt.scl,
+# rhf.scl,
+# zyg.scl,
+# lean.scl,
+# fat.scl,
+# BCI.RHF)%>%
+#   collect()%>%
+#   mutate(BCI = BCI.RHF)%>%
+#  collect()%>%
+# dplyr::select(-BCI.RHF)
+# 
+# write.csv(cgsfall, "cgsfall-composition.csv")
+# 
+# #Ground squirrel spring
+cgsspr <- data %>%
+  mutate(fatsd = fat.sd,
+         leansd = lean.sd)%>%
+  collect()%>%
+  dplyr::select(sex,
+squirrel_id,
+wgt,
+rhf.avg,
+zyg.avg,
+fat,
+fat.sd,
+lean,
+lean.sd,
+season,
+leanp,
+fatp,
+logwgt,
+logrhf,
+logzyg,
+loglean,
+logfat,
+wgt.scl,
+rhf.scl,
+zyg.scl,
+lean.scl,
+fat.scl,
+BCI.RHF)%>%
+  collect()%>%
+  mutate(BCI = BCI.RHF)%>%
+ collect()%>%
+dplyr::select(-BCI.RHF)
+
+ write.csv(cgsspr, "cgsspr-composition.csv")
+
+```
+
+
+#MODELS
+
+#Lean/fat by BCI/wgt  
+#Analyzing BCIs against fat, lean. All data
+```{r}
+#BCI ZYG 
+
+#Fat-BCIZYG - RSQ, BTPD <<--- note of which species are to be calculated with which BCI. Here, red squirrels and prairie dogs are noted for the ZYG BCI
+fatzygm1 <- lm(fat ~
+                 BCI.ZYG*sex, 
+               data = data)
+fatzygm1.resid1 = resid(fatzygm1)
+summary(fatzygm1)
+AICc(fatzygm1)
+
+
+#Lean-BCIZYG - RSQ, BTPD 
+leanzygm1 <- lm(lean ~
+                 BCI.ZYG*sex, 
+               data = data)
+leanzygm1.resid1 = resid(leanzygm1)
+summary(leanzygm1)
+AICc(leanzygm1)
+
+visreg(fatzygm1, "BCI.ZYG", by = "sex")
+visreg(leanzygm1, "BCI.ZYG", by = "sex")
+
+
+
+#BCI RHF 
+
+#Fat-BCIRHF- CGS <<--- Columbian ground squirrels should use RHF BCI for both seasons
+fatrhfm1 <- lm(fat ~
+                 BCI.RHF*sex, 
+               data = data)
+fatrhfm1.resid1 = resid(fatrhfm1)
+summary(fatrhfm1)
+AICc(fatrhfm1)
+
+
+#Lean-BCIRHF- CGS
+leanrhfm1 <- lm(lean ~
+                 BCI.RHF*sex, 
+               data = data)
+leanrhfm1.resid1 = resid(leanrhfm1)
+summary(leanrhfm1)
+AICc(leanrhfm1)
+
+visreg(fatrhfm1, "BCI.RHF", by = "sex")
+visreg(leanrhfm1, "BCI.RHF", by = "sex")
+
+
+
+#WGT
+
+#Fat- RSQ, BTPD, CGS
+fatwgtm1 <- lm(fat ~
+                 wgt*sex, 
+               data = data)
+fatwgtm1.resid1 = resid(fatwgtm1)
+summary(fatwgtm1)
+AICc(fatwgtm1)
+
+#Lean-SQ, BTPD, CGS
+leanwgtm1 <- lm(lean ~
+                 wgt*sex, 
+               data = data)
+leanwgtm1.resid1 = resid(leanwgtm1)
+summary(leanwgtm1)
+AICc(leanwgtm1)
+
+
+visreg(fatwgtm1, "wgt", by = "sex")
+visreg(leanwgtm1, "wgt", by = "sex")
+
+```
+
+
+#Lean/Fat by BCI/mass
+#Figures - BCI against lean/fat, mass against lean/fat
+###NOTE: must change titles depending on what species you are running code for!
+```{r, fig.width=5,fig.height=3}
+
+#FAT -by ZYG - RSQ, BTPD
+fig2azyg<-ggplot(data = data, 
+              aes(x=BCI.ZYG, y=fat, fill = sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Fat (g) ") + xlab("Body condition index (ZW index)") +
+  #theme_void() +
+  ggtitle('A) Prairie dog fat, pre-winter') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+fig2azyg
+
+#FAT -by RHF - CGS
+fig2arhf<-ggplot(data = data, 
+              aes(x=BCI.RHF, y=fat, fill = sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Fat (g) ") + xlab("Body condition index (RHF index)") +
+  #theme_void() +
+  ggtitle('A) Ground squirrel fat, spring') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+fig2arhf
+
+
+#LEAN -by BCI  ZYG - RSQ, BTPD
+fig2bzyg<-ggplot(data = data, 
+              aes(x=BCI.ZYG, y=lean, fill = sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Lean (g) ") + xlab("Body condition index (ZW index)") +
+  #theme_void() +
+  ggtitle('B) Prairie dog lean, pre-winter') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+fig2bzyg
+
+#LEAN -by BCI  RHF - CGS
+fig2brhf<-ggplot(data = data, 
+              aes(x=BCI.RHF, y=lean, fill = sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Lean (g) ") + xlab("Body condition index (RHF index)") +
+  #theme_void() +
+  ggtitle('B) Ground squirrel lean, spring') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+fig2brhf
+
+
+
+
+#FAT by WGT - RSQ, BTPD, CGS
+fig2c <-ggplot(data = data, 
+              aes(x=wgt, y = fat, fill = sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Fat (g)") + xlab("Body mass (g)") +
+  #theme_void() +
+  ggtitle('C) Ground squirrel fat, spring') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+fig2c
+
+
+
+#LEAN by WGT - RSQ, BTPD, CGS
+fig2d <-ggplot(data = data, 
+              aes(x=wgt, y = lean, fill = sex, shape = sex)) +
+ geom_point(aes(shape=sex,color=sex),size=2,stroke = 1)+
+  scale_shape_manual(values = c(16:17))+ 
+  scale_fill_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue'))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+   ylab("Lean (g)") + xlab("Body mass (g)") +
+  #theme_void() +
+  ggtitle('D) Ground squirrel lean, spring') +
+   stat_smooth(method = "lm", se = TRUE, alpha = 0.5, aes(color = sex))+
+  scale_color_manual(values=c('#E69F00','#0072b2','darkorchid4','turquoise4','green','blue')) +
+      theme(#legend.position = "top",
+   # legend.title = element_blank(),
+  #  legend.key = element_blank(),
+   # legend.text = element_text(size = 10),
+    axis.ticks = element_blank(),
+    axis.title=element_text(size=12), 
+    axis.text = element_text(size = 12),
+    strip.background = element_rect(fill="white", color = "black", size = 1),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(), 
+    panel.border = element_rect(colour = "black", fill=NA, size = 1)) #+
+ # theme(plot.margin=unit(c(1,1,1.5,1.2),"cm")) #+
+#  facet_wrap(~grid, ncol = 1)
+fig2d
+
 
 
 ```
+
+
+#All data - read in and rbind 
+```{r}
+#This reads in the data written to CSV above - you MUST have run the code for each species (RSQ, BTPD, and CGS in both seasons) and have the data written to your working directory to proceed. 
+
+rsq <- read.csv("rsq-composition.csv")
+rsq$species <- "rsq"
+
+btpd <- read.csv("btpd-composition.csv")
+btpd$species <- "btpd"
+
+cgsspr <- read.csv("cgsspr-composition.csv")
+cgsspr$species <- "cgsspr"
+
+cgsfall <- read.csv("cgsfall-composition.csv")
+cgsfall$species <- "cgsfall"
+
+
+#Red squirrel doesn't have season (all pre-winter) - add in column here. 
+
+rsq$season <- "fall"
+rsq <- rsq %>% dplyr::relocate(season, .after = lean.sd) #relocate season column
+
+
+#Remove the unused BCI for each critter
+rsq$BCI.RHF <- NULL
+btpd$BCI.RHF <- NULL
+cgsspr$BCI.ZYG<- NULL
+cgsfall$BCI.ZYG <- NULL
+
+
+
+#Rowbind all data
+squirrels <- rbind(rsq, btpd, cgsspr, cgsfall)
+
+
+squirrels <- squirrels %>%
+    mutate(speciessex = paste(species, sex, sep = ''), 
+           species = as.factor(species)) #Create species-sex variable
+
+
+#Species variable as factor 
+
+squirrels$species <- factor(x = squirrels$species, levels = c("rsq", "btpd", "cgsfall", "cgsspr"))
+
+
+#Models 
+
+fat.3sp <- lm (fat ~
+                  BCI*species, 
+                data = squirrels)
+summary(fat.3sp)
+
+plot(fat.3sp)
+fatfit <- visreg(fat.3sp, "BCI", by = "species")
+
+visreg(fat.3sp, "BCI", by = "species", gg=TRUE) + theme_classic()
+
+lean.3sp <- lm (lean ~
+                  BCI*species, 
+                data = squirrels)
+summary(lean.3sp)
+leanfit <- visreg(lean.3sp, "BCI", by = "species")
+
+visreg(lean.3sp, "BCI", by = "species", gg=TRUE) + theme_classic()
+
+
+AICc(fat.3sp)
+AICc(lean.3sp)
+
+
+# New facet label names for species 
+species.labs <- c("Red squirrels (pre-winter)", "Prairie dogs (pre-winter)", "Ground squirrels (pre-winter)", "Ground squirrels (spring)" )
+names(species.labs) <- c("rsq", "btpd", "cgsfall", "cgsspr") 
+
+
+#All three species
+
+fig6 <-ggplot(filter(fatfit$fit), aes(BCI, visregFit))+
+    geom_line(colour='black', size=1)+
+    geom_ribbon(aes(ymin=visregLwr, ymax=visregUpr), 
+                alpha=.3)+
+    geom_point(data=filter(fatfit$res), 
+               aes(BCI, visregRes), 
+               size=1, alpha=.3, 
+               position = "jitter") + 
+    xlab('Body condition index (species-specfiic)')+
+    ylab('Effect on fat (g)') + 
+  theme_classic() + 
+   facet_wrap(~species, labeller = labeller(species = species.labs),  ncol = 2, scales = "free")+ #scales = "free" allows axis ranges to vary in each panel 
+  theme(text=element_text(size=15))
+fig6
+
+fig7 <-ggplot(filter(leanfit$fit), aes(BCI, visregFit))+
+    geom_line(colour='black', size=1)+
+    geom_ribbon(aes(ymin=visregLwr, ymax=visregUpr), 
+                alpha=.3)+
+    geom_point(data=filter(leanfit$res), 
+               aes(BCI, visregRes), 
+               size=1, alpha=.3, 
+               position = "jitter") + 
+    xlab('Body condition index (species-specfiic)')+
+    ylab('Effect on lean (g)') + 
+
+  theme_classic() + 
+   facet_wrap(~species, labeller = labeller(species = species.labs),  ncol = 2, , scales = "free") + 
+  theme(text=element_text(size=15))
+fig7
+```
+
+#3 species but with body mass 
+```{r}
+
+squirrels %>%
+  ggplot(aes(x = species, y = wgt.scl)) + 
+  geom_boxplot() 
+
+
+fat.3sp <- lm (fat ~
+                  wgt.scl*species, 
+                data = squirrels)
+summary(fat.3sp)
+fatfit <- visreg(fat.3sp, "wgt.scl", by = "species")
+
+
+lean.3sp <- lm (lean ~
+                  wgt.scl*species, 
+                data = squirrels)
+summary(lean.3sp)
+leanfit <- visreg(lean.3sp, "wgt.scl", by = "species")
+
+AICc(fat.3sp)
+AICc(lean.3sp)
+
+#All three species
+
+fig6mass <-ggplot(filter(fatfit$fit), aes(wgt.scl, visregFit))+
+    geom_line(colour='black', size=1)+
+    geom_ribbon(aes(ymin=visregLwr, ymax=visregUpr), 
+                alpha=.3)+
+    geom_point(data=filter(fatfit$res), 
+               aes(wgt.scl, visregRes), 
+               size=1, alpha=.3, 
+               position = "jitter") + 
+    xlab('Body mass (scaled)')+
+    ylab('Effect on fat (g)') + 
+  theme_classic() + 
+   facet_wrap(~species, labeller = labeller(species = species.labs),  ncol = 2, scales = "free")+ 
+  theme(text=element_text(size=15))
+fig6mass
+
+fig7mass <-ggplot(filter(leanfit$fit), aes(wgt.scl, visregFit))+
+    geom_line(colour='black', size=1)+
+    geom_ribbon(aes(ymin=visregLwr, ymax=visregUpr), 
+                alpha=.3)+
+    geom_point(data=filter(leanfit$res), 
+               aes(wgt.scl, visregRes), 
+               size=1, alpha=.3, 
+               position = "jitter") + 
+    xlab('Body mass (scaled)')+
+    ylab('Effect on lean (g)') + 
+  theme_classic() + 
+   facet_wrap(~species, labeller = labeller(species = species.labs),  ncol = 2, scales = "free")+ 
+  theme(text=element_text(size=15))
+fig7mass
+```
+
